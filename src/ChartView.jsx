@@ -389,7 +389,7 @@ export default function ChartView({ flights, selectedParams }) {
             height={30}
             stroke="#0f3460"
             fill="#16213e"
-            tickFormatter={formatElapsed}
+            tickFormatter={formatTimestamp}
           />
         </ComposedChart>
       </ResponsiveContainer>

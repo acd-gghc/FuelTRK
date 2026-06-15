@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import ChartView from './ChartView';
 import FlightMap from './FlightMap';
 import { parseGarminCSV, extractFlightMeta } from './parseCSV';
@@ -9,6 +9,18 @@ const FLIGHT_COLORS = [
   '#42d4f4', '#f032e6', '#bfef45', '#469990', '#9A6324',
   '#800000', '#aaffc3', '#808000', '#000075', '#fabed4',
   '#dcbeff', '#a9a9a9',
+];
+
+const PRE_LOAD_FILES = [
+  'log_260612_102403_KLDJ.csv',
+  'log_260612_112334_KLDJ.csv',
+  'log_260612_170202_KBKL.csv',
+  'log_260613_100634_KIOW.csv',
+  'log_260613_102233_KIOW.csv',
+  'log_260613_150032_KICR.csv',
+  'log_260614_135453______.csv',
+  'log_260614_141002_46U.csv',
+  'log_260614_191702_KTRK.csv',
 ];
 
 const COLUMN_GROUPS = {
@@ -30,6 +42,31 @@ export default function App() {
   const [selectedParams, setSelectedParams] = useState([]);
   const [showMap, setShowMap] = useState(true);
   const nextId = useRef(0);
+
+  // Pre-load bundled flight data on mount
+  useEffect(() => {
+    PRE_LOAD_FILES.forEach((fileName) => {
+      fetch(`/pre_load_data/${fileName}`)
+        .then((r) => r.text())
+        .then((text) => {
+          const { rows, headers } = parseGarminCSV(text);
+          if (rows.length === 0) return;
+          const meta = extractFlightMeta(fileName);
+          const id = String(nextId.current++);
+          const flight = {
+            id,
+            name: meta.name,
+            fileName,
+            rows,
+            headers,
+            color: FLIGHT_COLORS[parseInt(id) % FLIGHT_COLORS.length],
+          };
+          setFlights((prev) => [...prev, flight]);
+          setSelectedFlightIds((prev) => new Set([...prev, id]));
+        })
+        .catch(() => {});
+    });
+  }, []);
 
   const handleFiles = useCallback((e) => {
     const files = Array.from(e.target.files);

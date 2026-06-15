@@ -77,10 +77,21 @@ const AVERAGEABLE = new Set([
 // Params where showing total fuel burned (start - end) makes more sense
 const FUEL_QTY = new Set(['FQtyL', 'FQtyR']);
 
-function formatElapsed(secs) {
-  const m = Math.floor(secs / 60);
-  const s = Math.round(secs % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
+function formatTimestamp(epochMs) {
+  const d = new Date(epochMs);
+  const mon = d.toLocaleString('en-US', { month: 'short' });
+  const day = d.getDate();
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  return `${mon} ${day} ${h}:${m}`;
+}
+
+function formatTimestampShort(epochMs) {
+  const d = new Date(epochMs);
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  const s = d.getSeconds().toString().padStart(2, '0');
+  return `${h}:${m}:${s}`;
 }
 
 function formatDuration(secs) {
@@ -139,7 +150,7 @@ export default function ChartView({ flights, selectedParams }) {
       return { chartData: [], lineConfigs: [], uniqueAxes: [] };
     }
 
-    // Merge all flight data into a single time series
+    // Merge all flight data into a single time series keyed by absolute timestamp
     const timeMap = new Map();
 
     flights.forEach((flight) => {
@@ -148,11 +159,11 @@ export default function ChartView({ flights, selectedParams }) {
 
       for (let i = 0; i < rows.length; i += step) {
         const row = rows[i];
-        const t = row._elapsed;
+        const t = row._timestamp;
         if (t == null) continue;
 
         if (!timeMap.has(t)) {
-          timeMap.set(t, { _elapsed: t });
+          timeMap.set(t, { _timestamp: t });
         }
         const merged = timeMap.get(t);
 
@@ -164,7 +175,7 @@ export default function ChartView({ flights, selectedParams }) {
       }
     });
 
-    const data = Array.from(timeMap.values()).sort((a, b) => a._elapsed - b._elapsed);
+    const data = Array.from(timeMap.values()).sort((a, b) => a._timestamp - b._timestamp);
 
     // Build line configs and collect axes
     const axisSet = new Map();
@@ -313,11 +324,14 @@ export default function ChartView({ flights, selectedParams }) {
         <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#222" />
           <XAxis
-            dataKey="_elapsed"
-            tickFormatter={formatElapsed}
+            dataKey="_timestamp"
+            tickFormatter={formatTimestamp}
             stroke="#555"
             tick={{ fontSize: 11, fill: '#888' }}
-            label={{ value: 'Elapsed Time', position: 'insideBottom', offset: -2, fill: '#666', fontSize: 11 }}
+            label={{ value: 'Local Time', position: 'insideBottom', offset: -2, fill: '#666', fontSize: 11 }}
+            type="number"
+            domain={['dataMin', 'dataMax']}
+            scale="time"
           />
 
           {uniqueAxes.map(({ id, label, orientation }, i) => (
@@ -345,7 +359,7 @@ export default function ChartView({ flights, selectedParams }) {
 
           <Tooltip
             contentStyle={{ background: '#16213e', border: '1px solid #0f3460', fontSize: 12, color: '#ddd' }}
-            labelFormatter={(v) => `T+${formatElapsed(v)}`}
+            labelFormatter={(v) => formatTimestampShort(v)}
             formatter={(value, name) => {
               const lc = lineDisplayMap[name];
               if (!lc) return [value, name];

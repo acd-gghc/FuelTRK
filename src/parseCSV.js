@@ -62,22 +62,34 @@ export function parseGarminCSV(text) {
   }
 
   if (rows.length > 0) {
-    const parseTime = (t) => {
-      const parts = t.split(/[\s,]+/);
+    const parseDateTime = (raw) => {
+      // raw is "2026-06-14 19:15:36" or " " or similar
+      const dateMatch = raw.match(/(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2}:\d{2})/);
+      if (dateMatch) {
+        return new Date(`${dateMatch[1]}T${dateMatch[2]}`).getTime();
+      }
+      return null;
+    };
+    const parseTimeOnly = (raw) => {
+      const parts = raw.split(/[\s,]+/);
       const timePart = parts.find((p) => /^\d{1,2}:\d{2}(:\d{2})?$/.test(p));
       if (!timePart) return null;
       const [h, m, s] = timePart.split(':').map(Number);
       return h * 3600 + m * 60 + (s || 0);
     };
-    // Find first row with a valid timestamp to use as t0
+    // Absolute timestamp (epoch ms) for X-axis
+    for (const row of rows) {
+      row._timestamp = parseDateTime(row._time);
+    }
+    // Elapsed seconds for duration stats
     let t0 = null;
     for (const row of rows) {
-      const t = parseTime(row._time);
+      const t = parseTimeOnly(row._time);
       if (t !== null) { t0 = t; break; }
     }
     if (t0 === null) t0 = 0;
     for (const row of rows) {
-      const t = parseTime(row._time);
+      const t = parseTimeOnly(row._time);
       row._elapsed = t !== null ? t - t0 : null;
     }
   }

@@ -94,8 +94,17 @@ export default function ChartView({ flights, selectedParams }) {
   const flightStats = useMemo(() => {
     return flights.map((flight) => {
       const rows = flight.rows;
-      const duration = rows.length > 0
-        ? (rows[rows.length - 1]._elapsed || 0) - (rows[0]._elapsed || 0)
+      // Find first and last rows with valid elapsed time
+      let firstElapsed = null;
+      let lastElapsed = null;
+      for (const r of rows) {
+        if (r._elapsed != null) {
+          if (firstElapsed === null) firstElapsed = r._elapsed;
+          lastElapsed = r._elapsed;
+        }
+      }
+      const duration = (firstElapsed != null && lastElapsed != null)
+        ? lastElapsed - firstElapsed
         : 0;
 
       const paramStats = {};

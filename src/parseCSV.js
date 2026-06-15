@@ -64,14 +64,21 @@ export function parseGarminCSV(text) {
   if (rows.length > 0) {
     const parseTime = (t) => {
       const parts = t.split(/[\s,]+/);
-      const timePart = parts.find((p) => p.includes(':') && !p.startsWith('-') && !p.startsWith('+'));
-      if (!timePart) return 0;
+      const timePart = parts.find((p) => /^\d{1,2}:\d{2}(:\d{2})?$/.test(p));
+      if (!timePart) return null;
       const [h, m, s] = timePart.split(':').map(Number);
       return h * 3600 + m * 60 + (s || 0);
     };
-    const t0 = parseTime(rows[0]._time);
+    // Find first row with a valid timestamp to use as t0
+    let t0 = null;
     for (const row of rows) {
-      row._elapsed = parseTime(row._time) - t0;
+      const t = parseTime(row._time);
+      if (t !== null) { t0 = t; break; }
+    }
+    if (t0 === null) t0 = 0;
+    for (const row of rows) {
+      const t = parseTime(row._time);
+      row._elapsed = t !== null ? t - t0 : null;
     }
   }
 

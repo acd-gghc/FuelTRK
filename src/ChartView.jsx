@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -101,6 +101,8 @@ function formatDuration(secs) {
 }
 
 export default function ChartView({ flights, selectedParams }) {
+  const [hideGaps, setHideGaps] = useState(true);
+
   // Compute aggregate stats per flight
   const flightStats = useMemo(() => {
     return flights.map((flight) => {
@@ -212,12 +214,38 @@ export default function ChartView({ flights, selectedParams }) {
       orientation: i % 2 === 0 ? 'left' : 'right',
     }));
 
+    // Add sequential index for gap-free mode
+    data.forEach((d, i) => { d._seq = i; });
+
     return { chartData: data, lineConfigs: configs, uniqueAxes: axes };
   }, [flights, selectedParams]);
 
   if (chartData.length === 0) return null;
 
   const axisWidth = 60;
+  const xKey = hideGaps ? '_seq' : '_timestamp';
+
+  // Lookup from seq index to timestamp for labels
+  const seqToTimestamp = useMemo(() => {
+    if (!hideGaps) return null;
+    const map = new Map();
+    chartData.forEach((d) => map.set(d._seq, d._timestamp));
+    return map;
+  }, [chartData, hideGaps]);
+
+  const xTickFormatter = hideGaps
+    ? (idx) => {
+        const ts = seqToTimestamp?.get(idx);
+        return ts ? formatTimestamp(ts) : '';
+      }
+    : formatTimestamp;
+
+  const xTooltipFormatter = hideGaps
+    ? (idx) => {
+        const ts = seqToTimestamp?.get(idx);
+        return ts ? formatTimestampShort(ts) : '';
+      }
+    : formatTimestampShort;
 
   // Build lookup for tooltip
   const lineDisplayMap = {};
@@ -227,8 +255,23 @@ export default function ChartView({ flights, selectedParams }) {
 
   return (
     <div>
-      {/* Legend */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginBottom: 10 }}>
+      {/* Legend + controls */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginBottom: 10, alignItems: 'center' }}>
+        <button
+          onClick={() => setHideGaps((v) => !v)}
+          style={{
+            background: hideGaps ? '#0f3460' : '#16213e',
+            border: '1px solid #0f3460',
+            color: hideGaps ? '#4fc3f7' : '#666',
+            borderRadius: 4,
+            padding: '3px 10px',
+            cursor: 'pointer',
+            fontSize: 11,
+            flexShrink: 0,
+          }}
+        >
+          Hide Empty Time
+        </button>
         {lineConfigs.map(({ dataKey, displayName, color, dash, unit }) => (
           <span key={dataKey} style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
             <svg width={18} height={4} style={{ flexShrink: 0 }}>
@@ -324,14 +367,14 @@ export default function ChartView({ flights, selectedParams }) {
         <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#222" />
           <XAxis
-            dataKey="_timestamp"
-            tickFormatter={formatTimestamp}
+            dataKey={xKey}
+            tickFormatter={xTickFormatter}
             stroke="#555"
             tick={{ fontSize: 11, fill: '#888' }}
             label={{ value: 'Local Time', position: 'insideBottom', offset: -2, fill: '#666', fontSize: 11 }}
             type="number"
             domain={['dataMin', 'dataMax']}
-            scale="time"
+            scale={hideGaps ? 'linear' : 'time'}
           />
 
           {uniqueAxes.map(({ id, label, orientation }, i) => (
@@ -359,7 +402,7 @@ export default function ChartView({ flights, selectedParams }) {
 
           <Tooltip
             contentStyle={{ background: '#16213e', border: '1px solid #0f3460', fontSize: 12, color: '#ddd' }}
-            labelFormatter={(v) => formatTimestampShort(v)}
+            labelFormatter={(v) => xTooltipFormatter(v)}
             formatter={(value, name) => {
               const lc = lineDisplayMap[name];
               if (!lc) return [value, name];
@@ -385,11 +428,11 @@ export default function ChartView({ flights, selectedParams }) {
           ))}
 
           <Brush
-            dataKey="_elapsed"
+            dataKey={xKey}
             height={30}
             stroke="#0f3460"
             fill="#16213e"
-            tickFormatter={formatTimestamp}
+            tickFormatter={xTickFormatter}
           />
         </ComposedChart>
       </ResponsiveContainer>

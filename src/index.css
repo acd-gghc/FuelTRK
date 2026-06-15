@@ -1,0 +1,9 @@
+body {
+  margin: 0;
+  background: #1a1a2e;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+}

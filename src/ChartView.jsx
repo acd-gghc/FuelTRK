@@ -64,13 +64,67 @@ function getAxisLabel(axisId) {
   return labels[axisId] || axisId;
 }
 
+// Params where an average is meaningful
+const AVERAGEABLE = new Set([
+  'IAS', 'GndSpd', 'TAS', 'WndSpd',
+  'AltB', 'AltMSL', 'AltGPS', 'OAT',
+  'E1 FFlow', 'E2 FFlow', 'E1 FPres', 'E2 FPres',
+  'E1 OilT', 'E2 OilT', 'E1 OilP', 'E2 OilP',
+  'E1 RPM', 'E2 RPM', 'E1 %Pwr', 'E2 %Pwr',
+  'volt1', 'volt2', 'FQtyL', 'FQtyR',
+]);
+
+// Params where showing total fuel burned (start - end) makes more sense
+const FUEL_QTY = new Set(['FQtyL', 'FQtyR']);
+
 function formatElapsed(secs) {
   const m = Math.floor(secs / 60);
   const s = Math.round(secs % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function formatDuration(secs) {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return `${h}h${m.toString().padStart(2, '0')}m`;
+}
+
 export default function ChartView({ flights, selectedParams }) {
+  // Compute aggregate stats per flight
+  const flightStats = useMemo(() => {
+    return flights.map((flight) => {
+      const rows = flight.rows;
+      const duration = rows.length > 0
+        ? (rows[rows.length - 1]._elapsed || 0) - (rows[0]._elapsed || 0)
+        : 0;
+
+      const paramStats = {};
+      for (const param of selectedParams) {
+        if (!AVERAGEABLE.has(param)) continue;
+
+        const vals = [];
+        for (const row of rows) {
+          if (row[param] != null) vals.push(row[param]);
+        }
+        if (vals.length === 0) continue;
+
+        const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+
+        if (FUEL_QTY.has(param)) {
+          const first = vals[0];
+          const last = vals[vals.length - 1];
+          paramStats[param] = { avg, burned: first - last };
+        } else {
+          paramStats[param] = { avg };
+        }
+      }
+
+      return { id: flight.id, name: flight.name, color: flight.color, duration, paramStats };
+    });
+  }, [flights, selectedParams]);
+
+  const totalDuration = flightStats.reduce((sum, fs) => sum + fs.duration, 0);
+
   const { chartData, lineConfigs, uniqueAxes } = useMemo(() => {
     if (flights.length === 0 || selectedParams.length === 0) {
       return { chartData: [], lineConfigs: [], uniqueAxes: [] };
@@ -169,6 +223,81 @@ export default function ChartView({ flights, selectedParams }) {
             {unit && <span style={{ color: '#555' }}>({unit})</span>}
           </span>
         ))}
+      </div>
+
+      {/* Aggregate stats */}
+      <div style={{
+        background: '#16213e',
+        border: '1px solid #0f3460',
+        borderRadius: 6,
+        padding: '8px 12px',
+        marginBottom: 10,
+        fontSize: 12,
+      }}>
+        {/* Per-flight rows */}
+        {flightStats.map((fs) => {
+          const averageableParams = selectedParams.filter((p) => fs.paramStats[p]);
+          return (
+            <div key={fs.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', marginBottom: flightStats.length > 1 ? 4 : 0, alignItems: 'center' }}>
+              <span style={{ color: fs.color, fontWeight: 600, minWidth: flightStats.length > 1 ? 100 : 0 }}>
+                {flightStats.length > 1 ? fs.name : ''}
+              </span>
+              <span style={{ color: '#aaa' }}>
+                <span style={{ color: '#666' }}>Time </span>{formatDuration(fs.duration)}
+              </span>
+              {averageableParams.map((param) => {
+                const s = fs.paramStats[param];
+                const unit = UNIT_MAP[param] || '';
+                const dec = ['RPM'].some((k) => param.includes(k)) ? 0 : param.includes('OilT') ? 0 : 1;
+                return (
+                  <span key={param} style={{ color: '#aaa' }}>
+                    <span style={{ color: '#666' }}>
+                      {FUEL_QTY.has(param) ? `${param} used ` : `${param} `}
+                    </span>
+                    {FUEL_QTY.has(param)
+                      ? `${s.burned.toFixed(1)} ${unit}`
+                      : `${s.avg.toFixed(dec)} ${unit}`
+                    }
+                  </span>
+                );
+              })}
+            </div>
+          );
+        })}
+        {/* Totals row when multiple flights */}
+        {flightStats.length > 1 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', borderTop: '1px solid #0f3460', paddingTop: 4, marginTop: 4, alignItems: 'center' }}>
+            <span style={{ color: '#fff', fontWeight: 600, minWidth: 100 }}>Total</span>
+            <span style={{ color: '#ccc' }}>
+              <span style={{ color: '#666' }}>Time </span>{formatDuration(totalDuration)}
+            </span>
+            {selectedParams.filter((p) => AVERAGEABLE.has(p)).map((param) => {
+              const allVals = [];
+              const allBurned = [];
+              flightStats.forEach((fs) => {
+                if (fs.paramStats[param]) {
+                  allVals.push(fs.paramStats[param].avg);
+                  if (FUEL_QTY.has(param)) allBurned.push(fs.paramStats[param].burned);
+                }
+              });
+              if (allVals.length === 0) return null;
+              const overallAvg = allVals.reduce((a, b) => a + b, 0) / allVals.length;
+              const unit = UNIT_MAP[param] || '';
+              const dec = ['RPM'].some((k) => param.includes(k)) ? 0 : param.includes('OilT') ? 0 : 1;
+              return (
+                <span key={param} style={{ color: '#ccc' }}>
+                  <span style={{ color: '#666' }}>
+                    {FUEL_QTY.has(param) ? `${param} used ` : `${param} `}
+                  </span>
+                  {FUEL_QTY.has(param)
+                    ? `${allBurned.reduce((a, b) => a + b, 0).toFixed(1)} ${unit}`
+                    : `${overallAvg.toFixed(dec)} ${unit}`
+                  }
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <ResponsiveContainer width="100%" height={520}>
